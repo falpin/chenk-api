@@ -2,18 +2,16 @@ from flask import Flask
 from dotenv import load_dotenv
 from extensions import cors
 from routes.main import *
-import config
 import os
 import logger
 
 from utils import *
-from config import SECRET_KEY, JWT_ACCESS_EXPIRES_HOURS, ALLOWED_API_KEYS
+from config import *
 
 
 load_dotenv()
 logger = logger.setup()
 
-# Проверка переменных окружения
 for var in config.required_env_vars:
     if not os.getenv(var):
         raise EnvironmentError(f"Переменная окружения {var} не задана в .env")
@@ -21,14 +19,10 @@ for var in config.required_env_vars:
 def create_app():
     app = Flask(__name__)
     
-    # Регистрация расширений
     cors.init_app(app)
 
-    # Регистрация blueprint'ов
     app.register_blueprint(api)
 
-    # Настройка конфигов 
-    app.config["ALLOWED_API_KEYS"] = ALLOWED_API_KEYS
     app.config["SECRET_KEY"] = SECRET_KEY
     setup_middleware(app)
 
