@@ -11,7 +11,6 @@ if db_dir:
     os.makedirs(db_dir, exist_ok=True)
 
 def SQL_request(query, params=(), fetch='one', jsonify_result=False):
-    print(DB_PATH)
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         try:
@@ -56,4 +55,9 @@ SQL_request("""CREATE TABLE IF NOT EXISTS api_keys (
     is_active BOOLEAN DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);""")
+
+SQL_request("""CREATE TABLE IF NOT EXISTS roles (
+    name VARCHAR(50) PRIMARY KEY,
+    priority INTEGER NOT NULL UNIQUE
 );""")

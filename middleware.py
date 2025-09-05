@@ -13,26 +13,44 @@ _api_keys_cache = {}
 _cache_last_updated = 0
 CACHE_TTL = 300
 
-def _refresh_api_keys_cache():  #Обновляет кеш API-ключей из базы данных
-    global _api_keys_cache, _cache_last_updated
+# Добавляем кеш для иерархии ролей
+_roles_hierarchy_cache = None
+
+def refresh_api_keys():
+    _refresh_api_keys_cache()
+    return True
+
+def _refresh_api_keys_cache():
+    global _api_keys_cache, _cache_last_updated, _roles_hierarchy_cache
     
     try:
+        # Загружаем ключи и роли
         result = SQL_request(
-            "SELECT key, role FROM api_keys WHERE is_active = 1",
+            "SELECT ak.key, ak.role, r.priority FROM api_keys ak "
+            "JOIN roles r ON ak.role = r.name WHERE ak.is_active = 1",
             fetch='all'
         )
         
         if result:
-            _api_keys_cache = {item['key']: item['role'] for item in result}
+            _api_keys_cache = {item['key']: {'role': item['role'], 'priority': item['priority']} for item in result}
             _cache_last_updated = time.time()
             logger.info(f"Обновлен кеш API-ключей. Загружено ключей: {len(_api_keys_cache)}")
         else:
             logger.warning("Не найдено активных API-ключей в базе данных")
             
+        # Загружаем иерархию ролей
+        roles_result = SQL_request(
+            "SELECT name, priority FROM roles ORDER BY priority DESC",
+            fetch='all'
+        )
+        if roles_result:
+            _roles_hierarchy_cache = {role['name']: role['priority'] for role in roles_result}
+            logger.info(f"Обновлена иерархия ролей: {_roles_hierarchy_cache}")
+            
     except Exception as e:
-        logger.error(f"Ошибка при загрузке API-ключей из базы: {e}")
+        logger.error(f"Ошибка при загрузке данных из базы: {e}")
 
-def _get_api_key_role(api_key):  #Получает роль API-ключа (с использованием кеша)
+def _get_api_key_info(api_key):
     global _cache_last_updated
     
     if not _api_keys_cache or time.time() - _cache_last_updated > CACHE_TTL:
@@ -41,25 +59,43 @@ def _get_api_key_role(api_key):  #Получает роль API-ключа (с �
     if api_key in _api_keys_cache:
         return _api_keys_cache[api_key]
     
-    
-    try: # Если ключа нет в кеше, проверяем напрямую в базе
+    try:
         result = SQL_request(
-            "SELECT role FROM api_keys WHERE key = ? AND is_active = 1",
+            "SELECT ak.role, r.priority FROM api_keys ak "
+            "JOIN roles r ON ak.role = r.name "
+            "WHERE ak.key = ? AND ak.is_active = 1",
             (api_key,),
             fetch='one'
         )
         
         if result:
-            role = result['role']
-            _api_keys_cache[api_key] = role
-            return role
+            role_info = {'role': result['role'], 'priority': result['priority']}
+            _api_keys_cache[api_key] = role_info
+            return role_info
     
     except Exception as e:
         logger.error(f"Ошибка при проверке API-ключа в базе: {e}")
     
     return None
 
-def key_role(required_role=None):  #Декоратор для проверки API-ключа и его роли
+def _check_role_access(user_priority, required_priority, check_mode):
+    """Проверяет доступ в зависимости от режима проверки"""
+    if check_mode == 'exact':
+        return user_priority == required_priority
+    elif check_mode == 'min':
+        return user_priority >= required_priority
+    return False
+
+def key_role(required_role=None, check_mode='min'):
+    """
+    Декоратор для проверки ролей с поддержкой иерархии
+    
+    :param required_role: Требуемая роль (строка или список строк)
+    :param check_mode: Режим проверки:
+        - 'min': минимальная требуемая роль (по умолчанию)
+        - 'exact': точное совпадение роли
+        - 'any': любая из перечисленных ролей
+    """
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -67,25 +103,40 @@ def key_role(required_role=None):  #Декоратор для проверки A
             
             if not api_key:
                 return jsonify({"error": "API ключ отсутствует"}), 401
+            key_info = _get_api_key_info(api_key)
             
-            actual_role = _get_api_key_role(api_key)
-            
-            if not actual_role:
+            if not key_info:
                 return jsonify({"error": "Неверный API ключ"}), 403
             
-            if required_role and actual_role != required_role:
-                return jsonify({"error": "Недостаточно прав"}), 403
+            user_role = key_info['role']
+            user_priority = key_info['priority']
+            
+            if required_role is not None:
+                if isinstance(required_role, list):
+                    if check_mode == 'any':
+                        if user_role not in required_role:
+                            return jsonify({"error": "Недостаточно прав"}), 403
+                    else:
+                        required_priority = min([
+                            _roles_hierarchy_cache[role] 
+                            for role in required_role 
+                            if role in _roles_hierarchy_cache
+                        ])
+                        if not _check_role_access(user_priority, required_priority, check_mode):
+                            return jsonify({"error": "Недостаточно прав"}), 403
+                else:
+                    # Одиночная роль
+                    required_priority = _roles_hierarchy_cache.get(required_role)
+                    if required_priority is None or not _check_role_access(user_priority, required_priority, check_mode):
+                        return jsonify({"error": "Недостаточно прав"}), 403
             
             g.api_key = api_key
-            g.api_key_role = actual_role
+            g.api_key_role = user_role
+            g.api_key_priority = user_priority
             
             return f(*args, **kwargs)
         return decorated_function
     return decorator
 
 def setup_middleware(app):
-    _refresh_api_keys_cache()
-    
-    @app.before_request
-    def logging_middleware():
-        logger.debug(f"Запрос: {request.method} {request.path}")
+    app.config['ROLES_HIERARCHY'] = _roles_hierarchy_cache

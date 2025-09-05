@@ -1,7 +1,7 @@
 from flask import Flask
 from dotenv import load_dotenv
 from extensions import cors
-from routes.main import *
+from routes import *
 import os
 import logger
 
