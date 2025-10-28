@@ -1,5 +1,5 @@
 PROJECT=gunicorn
-DOMAIN=api-chenk.falpin.ru
+DOMAIN=api.chenk.falpin.ru
 SERVICE_NAME=chenk-api
 
 # Сетевые настройки
