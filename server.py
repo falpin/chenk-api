@@ -14,7 +14,7 @@ def test():
     return jsonify({"success": True}), 200
 
 
-@api.route('/update/roups', methods=['GET'])
+@api.route('/update/groups', methods=['GET'])
 @key_role("admin")
 def update_groups():
     updated_groups = set()  # Для отслеживания обновлённых групп
