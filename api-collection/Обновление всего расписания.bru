@@ -1,0 +1,15 @@
+meta {
+  name: Обновление всего расписания
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{host}}/update/timetable
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+}

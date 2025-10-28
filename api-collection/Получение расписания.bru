@@ -1,0 +1,21 @@
+meta {
+  name: Получение расписания
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{host}}/{{complex}}/{{group}}
+  body: none
+  auth: inherit
+}
+
+vars:pre-request {
+  complex: Российская
+  group: ИСП-8-22
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

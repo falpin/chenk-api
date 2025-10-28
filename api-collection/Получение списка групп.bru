@@ -1,0 +1,20 @@
+meta {
+  name: Получение списка групп
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{host}}/{{complex}}
+  body: none
+  auth: inherit
+}
+
+vars:pre-request {
+  complex: Российскаяв
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
