@@ -17,11 +17,11 @@ openvpn --client \
   --auth-user-pass /tmp/vpn-credentials \
   --cipher AES-256-GCM \
   --verb 3 \
-  --remote-cert-tls server \
-  --tls-client \
   --connect-retry-max 5 \
   --connect-timeout 10 \
-  --mute-replay-warnings &
+  --mute-replay-warnings \
+  --verify-x509-name none \
+  --remote-cert-tls server &
 
 # Ждем немного, чтобы VPN подключился
 sleep 10
