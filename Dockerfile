@@ -1,0 +1,24 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Установка OpenVPN
+RUN apt-get update && \
+    apt-get install -y openvpn curl && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt gunicorn && \
+    find . -name "__pycache__" -exec rm -rf {} + && \
+    find . -name "*.pyc" -delete
+
+COPY . .
+
+RUN find . -name "__pycache__" -exec rm -rf {} + \
+    && find . -name "*.pyc" -delete
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["gunicorn", "--config", "gunicorn.conf.py", "server:app"]
