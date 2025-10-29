@@ -9,16 +9,15 @@ import os
 from contextlib import contextmanager
 
 URL = "https://pronew.chenk.ru/blocks/manage_groups/website/"
+VPN_CONFIG_PATH = "/data/config.ovpn"
 
 class VPNManager:
     def __init__(self, config_file_path):
         self.config_file_path = config_file_path
         self.process = None
     
-    def connect(self):
-        """Подключиться к VPN"""
-        try:
-            # Запускаем OpenVPN в фоновом режиме
+    def connect(self): # Подключиться к VPN
+        try: # Запускаем OpenVPN в фоновом режиме
             self.process = subprocess.Popen([
                 'openvpn', 
                 '--config', 
@@ -26,7 +25,6 @@ class VPNManager:
                 '--daemon'  # запуск в фоне
             ])
             
-            # Ждем некоторое время для установления соединения
             time.sleep(5)
             print("VPN подключен")
             return True
@@ -34,11 +32,9 @@ class VPNManager:
             print(f"Ошибка подключения к VPN: {e}")
             return False
     
-    def disconnect(self):
-        """Отключиться от VPN"""
+    def disconnect(self): # Отключиться от VPN
         if self.process:
-            try:
-                # Убиваем процесс OpenVPN
+            try: # Убиваем процесс OpenVPN
                 self.process.terminate()
                 self.process.wait(timeout=5)
                 print("VPN отключен")
@@ -49,8 +45,7 @@ class VPNManager:
                 print(f"Ошибка отключения VPN: {e}")
 
 @contextmanager
-def vpn_connection(config_file_path):
-    """Контекстный менеджер для VPN соединения"""
+def vpn_connection(config_file_path): # Контекстный менеджер для VPN соединения
     vpn = VPNManager(config_file_path)
     try:
         if vpn.connect():
@@ -60,8 +55,6 @@ def vpn_connection(config_file_path):
     finally:
         vpn.disconnect()
 
-# Используем вашу конфигурацию OpenVPN
-VPN_CONFIG_PATH = "/data/config.ovpn"  # Укажите путь к вашему файлу
 
 def get_courses(complex):
     with vpn_connection(VPN_CONFIG_PATH):
@@ -181,21 +174,18 @@ def get_timetable(group):
 
         return json.dumps({"week": week, "timetable": schedule_dict}, ensure_ascii=False)
 
-# Альтернативный вариант - сессия с VPN для нескольких запросов
-def create_vpn_session(config_path):
-    """Создает VPN соединение и возвращает сессию для нескольких запросов"""
+
+def create_vpn_session(config_path): # Создает VPN соединение и возвращает сессию для нескольких запросов
     vpn = VPNManager(config_path)
     if vpn.connect():
         return vpn, requests.Session()
     else:
         raise Exception("Не удалось подключиться к VPN")
 
-def close_vpn_session(vpn, session):
-    """Закрывает VPN соединение и сессию"""
+def close_vpn_session(vpn, session): # Закрывает VPN соединение и сессию
     vpn.disconnect()
     session.close()
 
 if __name__ == "__main__":
-    # Пример использования
     print(get_courses("Российская"))
     # print(get_timetable("view.php?gr=343&dep=3"))

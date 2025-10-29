@@ -21,6 +21,8 @@ def update_groups():
 
     for complex_name in COMPLEX:
         groups = json.loads(parser.get_courses(complex_name))
+        if groups is None:
+            return jsonify({"success": False, "error":"Не удалось получить список групп"}), 500
         
         for course_name, group_data in groups.items():
             course_number = int(course_name.split()[0])
