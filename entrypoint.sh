@@ -9,17 +9,19 @@ set +a
 echo "$VPN_USERNAME" > /tmp/vpn-credentials
 echo "$VPN_PASSWORD" >> /tmp/vpn-credentials
 
-# Запускаем OpenVPN в фоне
+# Запускаем OpenVPN в фоне с отключенной проверкой сертификата
 openvpn --client \
   --dev tun \
   --proto udp \
   --remote vpn.chenk.ru 1194 \
   --auth-user-pass /tmp/vpn-credentials \
   --cipher AES-256-GCM \
-  --verb 3 &
+  --verb 3 \
+  --tls-verify none \
+  --verify-x509-name none &
 
 # Ждем немного, чтобы VPN подключился
-sleep 5
+sleep 10
 
 # Запускаем основную команду (gunicorn)
 exec "$@"
