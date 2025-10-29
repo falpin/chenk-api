@@ -1,71 +1,37 @@
+# main.py
 import requests
 from bs4 import BeautifulSoup
 import re
 import json
-import subprocess
 import time
-import signal
-import os
-from contextlib import contextmanager
+from vpn_manager import vpn_connection # Импортируем контекстный менеджер
 
 URL = "https://pronew.chenk.ru/blocks/manage_groups/website/"
-VPN_CONFIG_PATH = "/data/config.ovpn"
-
-class VPNManager:
-    def __init__(self, config_file_path):
-        self.config_file_path = config_file_path
-        self.process = None
-    
-    def connect(self): # Подключиться к VPN
-        try: # Запускаем OpenVPN в фоновом режиме
-            self.process = subprocess.Popen([
-                'openvpn', 
-                '--config', 
-                self.config_file_path,
-                '--daemon'  # запуск в фоне
-            ])
-            
-            time.sleep(5)
-            print("VPN подключен")
-            return True
-        except Exception as e:
-            print(f"Ошибка подключения к VPN: {e}")
-            return False
-    
-    def disconnect(self): # Отключиться от VPN
-        if self.process:
-            try: # Убиваем процесс OpenVPN
-                self.process.terminate()
-                self.process.wait(timeout=5)
-                print("VPN отключен")
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                print("VPN процесс принудительно завершен")
-            except Exception as e:
-                print(f"Ошибка отключения VPN: {e}")
-
-@contextmanager
-def vpn_connection(config_file_path): # Контекстный менеджер для VPN соединения
-    vpn = VPNManager(config_file_path)
-    try:
-        if vpn.connect():
-            yield vpn
-        else:
-            raise Exception("Не удалось подключиться к VPN")
-    finally:
-        vpn.disconnect()
-
+VPN_CONFIG_PATH = "/data/config.ovpn" # Убедитесь, что путь корректен
 
 def get_courses(complex):
-    with vpn_connection(VPN_CONFIG_PATH):
+    """
+    Получает список курсов и групп для указанного корпуса через VPN.
+    """
+    with vpn_connection(VPN_CONFIG_PATH) as vpn:
+        if vpn is None:
+            print("Не удалось подключиться к VPN для получения курсов.")
+            return None # Или другое действие при ошибке
+
         if complex == "Российская":
-            complex = "list.php?id=3"
+            complex_param = "list.php?id=3"
         elif complex == "Блюхера":
-            complex = "list.php?id=1"
+            complex_param = "list.php?id=1"
         else:
             return None
 
-        response = requests.get(URL + complex)
+        try:
+            response = requests.get(URL + complex_param)
+            response.raise_for_status() # Проверяем статус ответа
+        except requests.exceptions.RequestException as e:
+            print(f"Ошибка при запросе курсов: {e}")
+            return None
+
         soup = BeautifulSoup(response.text, 'html.parser')
         courses = soup.find_all('div', class_='spec-year-block-container')
         course_dict = {}
@@ -83,109 +49,124 @@ def get_courses(complex):
                 groups = spec_course.find_all('span', class_='group-block')
                 for group in groups:
                     group_link_tag = group.find('a')
-                    group_name = group_link_tag.text.strip()
-                    group_link = group_link_tag['href'].strip()
-                    course_dict[year_name][group_name] = group_link
+                    if group_link_tag: # Проверяем, что ссылка существует
+                        group_name = group_link_tag.text.strip()
+                        group_link = group_link_tag['href'].strip()
+                        course_dict[year_name][group_name] = group_link
 
-        return json.dumps(course_dict, ensure_ascii=False)
+        return json.dumps(course_dict, ensure_ascii=False, indent=2)
 
 def get_timetable(group):
-    with vpn_connection(VPN_CONFIG_PATH):
-        response = requests.get(URL + group)
+    """
+    Получает расписание для указанной группы через VPN.
+    """
+    with vpn_connection(VPN_CONFIG_PATH) as vpn:
+        if vpn is None:
+            print("Не удалось подключиться к VPN для получения расписания.")
+            return None # Или другое действие при ошибке
+
+        try:
+            response = requests.get(URL + group)
+            response.raise_for_status() # Проверяем статус ответа
+        except requests.exceptions.RequestException as e:
+            print(f"Ошибка при запросе расписания: {e}")
+            return None
+
         schedule_dict = {}
+        soup = BeautifulSoup(response.text, 'html.parser')
+            
+        schedule = soup.find('div', class_='timetableContainer')
+        if schedule is None:
+            print("Расписание не найдено на странице.")
+            return None
+            
+        days = schedule.find_all('td', attrs={'style': True})
 
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-                
-            schedule = soup.find('div', class_='timetableContainer')
-            if schedule is None:
-                return None
-                
-            days = schedule.find_all('td', attrs={'style': True})
+        week = soup.find('span', attrs={'style': 'vertical-align: bottom'})
+        text = week.get_text() if week else "Неизвестная неделя"
+        week = text.split()[0] if text.split() else "Неизвестная неделя"
 
-            week = soup.find('span', attrs={'style': 'vertical-align: bottom'})
-            text = week.get_text()
-            week = text.split()[0]
+        for day in days:
+            day_header_div = day.find('div', class_='dayHeader')
+            if not day_header_div:
+                continue # Пропускаем, если заголовок дня не найден
+            day_week = day_header_div.text.strip()
 
-            for day in days:
-                day_week = day.find('div', class_='dayHeader').text.strip()
-                day_schedule = day.find(
-                    'div', attrs={'style': 'padding-left: 6px;'})
+            day_schedule_div = day.find('div', attrs={'style': 'padding-left: 6px;'})
+            if not day_schedule_div:
+                 print(f"Расписание для дня {day_week} не найдено.")
+                 continue # Пропускаем, если расписание дня не найдено
 
-                lessons_list = {}
+            lessons_list = {}
 
-                lessons = day_schedule.find_all(
-                    'div', class_='lessonBlock')
-                i = 0
-                for lesson in lessons:
-                    i += 1
-                    lesson_time_block = lesson.find(
-                        'div', class_='lessonTimeBlock').text.strip().split('\n')
-                    lesson_number = lesson_time_block[0].strip()
+            lessons = day_schedule_div.find_all('div', class_='lessonBlock')
+            i = 0
+            for lesson in lessons:
+                i += 1
+                lesson_time_block_div = lesson.find('div', class_='lessonTimeBlock')
+                if not lesson_time_block_div:
+                    continue # Пропускаем, если время урока не найдено
+                lesson_time_block = lesson_time_block_div.text.strip().split('\n')
+                lesson_number = lesson_time_block[0].strip()
+                try:
+                    lesson_time_start = lesson_time_block[1].strip()
+                    lesson_time_finish = lesson_time_block[2].strip()
+                except IndexError: # Если не хватает элементов в списке
+                    lesson_time_start = "???"
+                    lesson_time_finish = "???"
+
+                lesson_info = {
+                    "time_start": lesson_time_start,
+                    "time_finish": lesson_time_finish,
+                    "lessons": {}
+                }
+
+                lesson_name = None
+                discBlocks = lesson.find_all('div', class_='discBlock')
+                for discBlock in discBlocks:
+                    if 'cancelled' in discBlock.get('class', []):
+                        continue # Пропускаем отмененные занятия
+
+                    header_div = discBlock.find('div', class_='discHeader')
                     try:
-                        lesson_time_start = lesson_time_block[1].strip()
-                        lesson_time_finish = lesson_time_block[2].strip()
-                    except:
-                        lesson_time_start = "???"
-                        lesson_time_finish = "???"
+                        span_tag = header_div.find('span')
+                        if span_tag:
+                            lesson_name_raw = span_tag.get('title', '')
+                            lesson_name = re.sub(r'\(.*?\)', '', lesson_name_raw).strip()
+                        else:
+                            lesson_name = "Без названия" # Или другое значение по умолчанию
+                    except AttributeError:
+                        lesson_name = "Без названия" # Или другое значение по умолчанию
 
-                    lesson_info = {
-                        "time_start": lesson_time_start,
-                        "time_finish": lesson_time_finish,
-                        "lessons": {}
-                    }
+                    lesson_teachers_data = discBlock.find_all('div', class_='discSubgroup')
+                    lesson_data = {}
+                    for subgroup in lesson_teachers_data:
+                        teacher_div = subgroup.find('div', class_='discSubgroupTeacher')
+                        classroom_div = subgroup.find('div', class_='discSubgroupClassroom')
+                        
+                        teacher = teacher_div.text.strip() if teacher_div else "Неизвестный преподаватель"
+                        classroom_raw = classroom_div.text.strip() if classroom_div else "Неизвестная аудитория"
+                        classroom = classroom_raw.replace("???", '').strip()
 
-                    lesson_name = None
-                    discBlocks = lesson.find_all('div', class_='discBlock')
-                    for discBlock in discBlocks:
-                        if 'cancelled' in discBlock.get('class', []):
-                            continue
+                        lesson_data[teacher] = classroom
+                        
+                    lesson_info['lessons'] = {lesson_name: lesson_data}
 
-                        header_div = discBlock.find('div', class_='discHeader')
-                        try:
-                            lesson_name = header_div.find('span').get('title')
-                            lesson_name = re.sub(r'\(.*?\)', '', lesson_name)
-                            lesson_name = lesson_name.strip()
-                        except:
-                            lesson_name = None
+                if lesson_name and lesson_name != "":
+                    if lesson_number == "??-??":
+                        if i == 1: i = 5
+                        lesson_number = str(i) # Убедимся, что это строка
+                    lessons_list[lesson_number] = lesson_info
+                    try:
+                        i = int(lesson_number) # Обновляем i, если номер урока - число
+                    except ValueError:
+                        pass # Если номер урока не число, оставляем i как есть
 
-                        lesson_teachers_data = discBlock.find_all('div', class_='discSubgroup')
-                        lesson_data = {}
-                        for subgroup in lesson_teachers_data:
-                            teacher = subgroup.find(
-                                'div', class_='discSubgroupTeacher').text.strip()
-                            classroom = subgroup.find('div', class_='discSubgroupClassroom').text.strip()
-                            classroom = classroom.replace("???", '')
-                            lesson_data[teacher] = classroom
-                            
-                        lesson_info['lessons'] = {lesson_name: lesson_data}
+            schedule_dict[day_week] = lessons_list
 
-                    if lesson_name is not None and lesson_name != "":
-                        if lesson_number == "??-??":
-                            if i == 1: i = 5
-                            lesson_number = i
-                        lessons_list[lesson_number] = lesson_info
-                        i = int(lesson_number)
+    result = {"week": week, "timetable": schedule_dict}
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
-                schedule_dict[day_week] = lessons_list
-
-        else:
-            schedule_dict['Ошибка'] = f"Ошибка при запросе: {response.status_code}"
-
-        return json.dumps({"week": week, "timetable": schedule_dict}, ensure_ascii=False)
-
-
-def create_vpn_session(config_path): # Создает VPN соединение и возвращает сессию для нескольких запросов
-    vpn = VPNManager(config_path)
-    if vpn.connect():
-        return vpn, requests.Session()
-    else:
-        raise Exception("Не удалось подключиться к VPN")
-
-def close_vpn_session(vpn, session): # Закрывает VPN соединение и сессию
-    vpn.disconnect()
-    session.close()
 
 if __name__ == "__main__":
     print(get_courses("Российская"))
-    # print(get_timetable("view.php?gr=343&dep=3"))
