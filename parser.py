@@ -61,7 +61,7 @@ def vpn_connection(config_file_path):
         vpn.disconnect()
 
 # Используем вашу конфигурацию OpenVPN
-VPN_CONFIG_PATH = "config.ovpn"  # Укажите путь к вашему файлу
+VPN_CONFIG_PATH = "/data/config.ovpn"  # Укажите путь к вашему файлу
 
 def get_courses(complex):
     with vpn_connection(VPN_CONFIG_PATH):
