@@ -9,19 +9,10 @@ set +a
 echo "$VPN_USERNAME" > /tmp/vpn-credentials
 echo "$VPN_PASSWORD" >> /tmp/vpn-credentials
 
-# Запускаем OpenVPN в фоне с отключением проверки сертификата
-openvpn --client \
-  --dev tun \
-  --proto udp \
-  --remote vpn.chenk.ru 1194 \
+# Запускаем OpenVPN в фоне, используя .ovpn файл
+openvpn --config /etc/openvpn/client.ovpn \
   --auth-user-pass /tmp/vpn-credentials \
-  --cipher AES-256-GCM \
-  --verb 3 \
-  --connect-retry-max 5 \
-  --connect-timeout 10 \
-  --mute-replay-warnings \
-  --verify-x509-name none \
-  --remote-cert-tls server &
+  --verb 3 &
 
 # Ждем немного, чтобы VPN подключился
 sleep 10
